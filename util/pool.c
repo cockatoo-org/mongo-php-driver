@@ -162,21 +162,33 @@ void mongo_util_pool_close(mongo_server *server TSRMLS_DC) {
 }
 
 static void test_other_conns(mongo_server *server, stack_monitor *monitor TSRMLS_DC) {
-  mongo_server *other;
+  mongo_server other;
   zval *response = 0;
 
   // initialize temp
-  other = mongo_util_server_copy(server, 0, NO_PERSIST TSRMLS_CC);
+  memset(&other,0,sizeof(mongo_server));
+  other.owner    = server->owner;
+  other.port     = server->port;
+  if ( server->host ) 
+    other.host     = pestrdup(server->host, NO_PERSIST);  
+  if ( server->label ) 
+    other.label    = pestrdup(server->label, NO_PERSIST);  
+  if ( server->username ) 
+    other.username = pestrdup(server->username, NO_PERSIST);  
+  if ( server->password ) 
+    other.password = pestrdup(server->password, NO_PERSIST);  
+  if ( server->db ) 
+    other.db       = pestrdup(server->db, NO_PERSIST);  
 
   // get another connection
-  get_other_conn(server, other, monitor);
+  get_other_conn(server, &other, monitor);
 
   // if no other connections open, we don't have to worry about closing them
-  if (other->connected == 0) {
+  if (other.connected == 0) {
     return;
   }
 
-  response = mongo_util_rs__cmd("ping", other TSRMLS_CC);
+  response = mongo_util_rs__cmd("ping", &other TSRMLS_CC);
 
   if (!response) {
     mongo_util_pool__close_connections(monitor TSRMLS_CC);
@@ -193,9 +205,13 @@ static void test_other_conns(mongo_server *server, stack_monitor *monitor TSRMLS
     zval_ptr_dtor(&response);
   }
 
-  // destroy temp
-  php_mongo_server_free(other, NO_PERSIST TSRMLS_CC);
-
+  // destroy
+  //  Some "mem-leak" have been remaining. The case of some node downing.
+  pefree(other.host,NO_PERSIST);
+  pefree(other.label,NO_PERSIST);
+  pefree(other.username,NO_PERSIST);
+  pefree(other.password,NO_PERSIST);
+  pefree(other.db,NO_PERSIST);
 }
 
 static void get_other_conn(mongo_server *server, mongo_server *other, stack_monitor *monitor) {
